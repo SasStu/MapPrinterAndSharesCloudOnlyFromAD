@@ -7,6 +7,10 @@ No domain join, no `ActiveDirectory` module, no stored credentials, no Group Pol
 LDAP via raw ADSI as the signed-in user, reads mapping data from AD attributes, and applies the mappings
 with `net.exe use` and `Add-Printer`.
 
+> **Companion article:** [Part 1 - Using Active Directory Information on Cloud-Only Devices to Map Printers and Shares](https://sastu-insights.com/posts/Part-1-Using-Active-Directory-Information-on-Cloud-Only-Devices-to-Map-Printers-and-Shares/)
+> walks through the reasoning behind this approach - why the usual options fall short on Entra-joined
+> devices, and what the prerequisites actually cost you.
+
 ## How it works
 
 1. **Log rotation + transcript** - rotates the per-user log (3 generations) and starts a transcript.
@@ -39,7 +43,9 @@ share, or a failing printer connection produces a warning and is skipped; the re
 ## Repository layout
 
 ```text
-Script/MapDrivesAndPrinter.ps1    The whole thing - orchestrator plus all functions
+Script/MapDrivesAndPrinter.ps1          The whole thing - orchestrator plus all functions
+Install/SMBShares.xml                   Importable scheduled task definition
+Tests/MapDrivesAndPrinter.Tests.ps1     Pester 5 unit tests
 ```
 
 ## Requirements
@@ -100,21 +106,47 @@ Override the defaults:
 | `HomeShareMappingProperty`   | `extensionattribute3`                               | User attribute holding the home share UNC path. Empty to skip.      |
 | `HomeShareMappingMountPoint` | `H`                                                 | Drive letter requested for the home share.                          |
 | `ADDelimiter`                | `;`                                                 | Separator between path and mount point.                             |
-| `ADDomain`                   | `sst.lab-perinova.com`                              | DNS domain to bind against. **Change this for your environment.**   |
+| `ADDomain`                   | `contoso.com`                                       | DNS domain to bind against. **Change this for your environment.**   |
 | `ADPort`                     | `389, 636`                                          | Ports tried by the reachability probe, in order.                    |
 | `LogfilePath`                | `%LOCALAPPDATA%\MapPrinterAndShares\MapFromMWP.log` | Per-user transcript, rotated to `.old1`-`.old3`.                    |
 
 ## Deployment
 
 Deploy as a **scheduled task running in the user context**, triggered at logon and on network connect.
-Recommended task settings:
+[`Install/SMBShares.xml`](Install/SMBShares.xml) is a ready-made task definition:
 
-- Run as the signed-in user, **not** with highest privileges - the LDAP bind must use the user's identity
-- `MultipleInstancesPolicy = IgnoreNew` so overlapping triggers can't stack up
-- An `ExecutionTimeLimit` (e.g. `PT1H`) as a backstop
+```powershell
+Register-ScheduledTask -TaskName 'MapDrivesAndPrinter' -Xml (Get-Content .\Install\SMBShares.xml -Raw)
+```
+
+It expects the script at `C:\Program Files\MapDrivesAndPrinter\MapDrivesAndPrinter.ps1` - copy it there
+first, or edit the `<Arguments>` element to match your own path.
+
+What the definition does, and why:
+
+- **Principal `S-1-5-32-545` (Builtin\Users) at `LeastPrivilege`** - the task runs as whoever is signed
+  in, not elevated, so the LDAP bind uses the user's own identity.
+- **Logon trigger** - covers the normal case.
+- **Event trigger on Firewall event `2010` with `NewProfile = 1`, delayed `PT1M`** - fires when the
+  connection is classified into the **Domain** profile, i.e. the moment the device actually gains line of
+  sight to the corporate network. This is what makes VPN and docking-station scenarios work.
+- **`MultipleInstancesPolicy = IgnoreNew`** so overlapping triggers can't stack up.
+- **`ExecutionTimeLimit = PT1H`** as a backstop, and `Hidden = true` so no console window flashes
+  (the action runs `conhost.exe --headless` around `powershell.exe`).
 
 The script's own reachability pre-flight and LDAP client timeout mean an off-network run costs a few
 seconds and exits cleanly, so triggering it often is cheap.
+
+## Tests
+
+[`Tests/MapDrivesAndPrinter.Tests.ps1`](Tests/MapDrivesAndPrinter.Tests.ps1) covers the pure logic -
+mount point selection, group description parsing, `memberOf` walking, mapping resolution, UPN resolution
+and the mapping summary - with Pester 5. The tests dot-source the script, so nothing is mapped and no AD
+is contacted.
+
+```powershell
+Invoke-Pester .\Tests\MapDrivesAndPrinter.Tests.ps1
+```
 
 ## Exit behaviour
 
@@ -144,3 +176,8 @@ Common causes:
 - **AD search found 0 objects** - the resolved UPN has no matching on-prem user (cloud-only account).
 - **Share fails to map** - the log carries `net.exe`'s exit code and its own message; typically an
   authentication failure, which points back to the Kerberos trust prerequisite.
+
+## Further reading
+
+- [Part 1 - Using Active Directory Information on Cloud-Only Devices to Map Printers and Shares](https://sastu-insights.com/posts/Part-1-Using-Active-Directory-Information-on-Cloud-Only-Devices-to-Map-Printers-and-Shares/)
+  - the write-up this repository accompanies.

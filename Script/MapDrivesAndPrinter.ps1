@@ -8,7 +8,7 @@ param(
 	$HomeShareMappingProperty = 'extensionattribute3',
 	$HomeShareMappingMountPoint = 'H',
 	$ADDelimiter = ';',
-	$ADDomain = 'sst.lab-perinova.com',
+	$ADDomain = 'contoso.com',
 	[int[]]$ADPort = @(389, 636),
 	$LogfilePath = $env:LOCALAPPDATA + '\MapPrinterAndShares\MapFromMWP.log'
 )
