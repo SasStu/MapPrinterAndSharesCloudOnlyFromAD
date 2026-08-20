@@ -7,9 +7,14 @@ No domain join, no `ActiveDirectory` module, no stored credentials, no Group Pol
 LDAP via raw ADSI as the signed-in user, reads mapping data from AD attributes, and applies the mappings
 with `net.exe use` and `Add-Printer`.
 
-> **Companion article:** [Part 1 - Using Active Directory Information on Cloud-Only Devices to Map Printers and Shares](https://sastu-insights.com/posts/Part-1-Using-Active-Directory-Information-on-Cloud-Only-Devices-to-Map-Printers-and-Shares/)
-> walks through the reasoning behind this approach - why the usual options fall short on Entra-joined
-> devices, and what the prerequisites actually cost you.
+> **Companion articles:**
+>
+> - [Part 1 - Using Active Directory Information on Cloud-Only Devices to Map Printers and Shares](https://sastu-insights.com/posts/Part-1-Using-Active-Directory-Information-on-Cloud-Only-Devices-to-Map-Printers-and-Shares/)
+>   walks through the reasoning behind this approach - why the usual options fall short on Entra-joined
+>   devices, and what the prerequisites actually cost you.
+> - [Part 2 - Running a Scheduled Task Only When Active Directory Is Actually Reachable](https://sastu-insights.com/posts/Part-2-Running-a-Scheduled-Task-Only-When-Active-Directory-Is-Actually-Reachable/)
+>   covers the scheduling side - firing the task at the moment the device can actually reach a domain
+>   controller, instead of hoping a logon trigger lands at the right time. *(Not published yet.)*
 
 ## How it works
 
@@ -137,6 +142,9 @@ What the definition does, and why:
 The script's own reachability pre-flight and LDAP client timeout mean an off-network run costs a few
 seconds and exits cleanly, so triggering it often is cheap.
 
+[Part 2 of the companion series](https://sastu-insights.com/posts/Part-2-Running-a-Scheduled-Task-Only-When-Active-Directory-Is-Actually-Reachable/)
+goes into this trigger design in depth *(not published yet)*.
+
 ## Tests
 
 [`Tests/MapDrivesAndPrinter.Tests.ps1`](Tests/MapDrivesAndPrinter.Tests.ps1) covers the pure logic -
@@ -148,9 +156,9 @@ is contacted.
 Invoke-Pester .\Tests\MapDrivesAndPrinter.Tests.ps1
 ```
 
-## Exit behaviour
+## Exit behavior
 
-| Condition                 | Behaviour                                              |
+| Condition                 | Behavior                                               |
 | ------------------------- | ------------------------------------------------------ |
 | AD unreachable            | Exit `0` quietly - expected off-network                |
 | No UPN resolvable         | Throws                                                 |
@@ -181,3 +189,6 @@ Common causes:
 
 - [Part 1 - Using Active Directory Information on Cloud-Only Devices to Map Printers and Shares](https://sastu-insights.com/posts/Part-1-Using-Active-Directory-Information-on-Cloud-Only-Devices-to-Map-Printers-and-Shares/)
   - the write-up this repository accompanies.
+- [Part 2 - Running a Scheduled Task Only When Active Directory Is Actually Reachable](https://sastu-insights.com/posts/Part-2-Running-a-Scheduled-Task-Only-When-Active-Directory-Is-Actually-Reachable/)
+  - the scheduled task and its reachability trigger, in depth. *(Not published yet - the link will 404
+  until it goes live.)*
