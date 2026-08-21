@@ -50,6 +50,7 @@ share, or a failing printer connection produces a warning and is skipped; the re
 ```text
 Script/MapDrivesAndPrinter.ps1          The whole thing - orchestrator plus all functions
 Install/SMBShares.xml                   Importable scheduled task definition
+Intune/CProf-Win-D-SetCat-...json       Exported NetworkListManager CSP profile (network classification)
 Tests/MapDrivesAndPrinter.Tests.ps1     Pester 5 unit tests
 ```
 
@@ -61,7 +62,8 @@ Tests/MapDrivesAndPrinter.Tests.ps1     Pester 5 unit tests
   credentials. This is free for hybrid users signing in with username and password; **passwordless
   sign-in (Windows Hello for Business, FIDO2) needs Cloud Kerberos Trust** or an equivalent trust model.
 - An Intune NetworkListManager CSP profile granting the **Domain firewall profile** on network connect -
-  otherwise the device treats the corporate network as Public and blocks the traffic.
+  otherwise the device treats the corporate network as Public and blocks the traffic. See
+  [Network classification](#network-classification) for a ready-made profile.
 
 ## AD data model
 
@@ -115,6 +117,61 @@ Override the defaults:
 | `ADPort`                     | `389, 636`                                          | Ports tried by the reachability probe, in order.                    |
 | `LogfilePath`                | `%LOCALAPPDATA%\MapPrinterAndShares\MapFromMWP.log` | Per-user transcript, rotated to `.old1`-`.old3`.                    |
 
+## Network classification
+
+Everything here hangs off the device classifying the corporate network as **Domain Authenticated**. On a
+domain-joined machine that happens for free. On an Entra-joined machine it does not: without help Windows
+files the LAN or VPN connection under **Public**, the Public firewall profile blocks outbound SMB, and the
+Firewall `2010` event the scheduled task listens for never fires.
+
+The **NetworkListManager CSP** fixes that. Point it at an internal HTTPS endpoint; when the device can
+reach that endpoint and validate its certificate, Windows names the connection and marks it Domain
+Authenticated - which switches on the Domain firewall profile and raises event `2010` with `NewProfile = 1`.
+
+[`Intune/CProf-Win-D-SetCat-FirewallDomainProfile-[ToEdit].json`](Intune/CProf-Win-D-SetCat-FirewallDomainProfile-%5BToEdit%5D.json)
+is an exported settings catalog profile (Windows 10 and later, device scope) carrying the two settings that
+matter:
+
+| Setting                                  | Value in the export        | What it is                                                               |
+| ---------------------------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| `AllowedTlsAuthenticationEndpoints`      | `https://internalwebsite/` | Endpoint probed to decide whether the device is on the internal network. |
+| `ConfiguredTLSAuthenticationNetworkName` | `Dummy`                    | Name the connection gets once the probe succeeds.                        |
+
+The `[ToEdit]` in the name is the point: **both values are placeholders.** Replace them before you deploy.
+
+Requirements on the endpoint:
+
+- Reachable **only** from the internal network or through the VPN - if it answers from the public
+  internet, every coffee shop counts as your corporate network.
+- Serves a certificate that chains to a root the device already trusts. Deploy the internal root CA to
+  the devices as well, or the probe fails silently and the network stays Public.
+- Plain HTTPS on 443 is enough; the profile only validates the TLS handshake, it does not fetch content.
+
+Import it with the Graph PowerShell SDK, stripping the read-only properties the export carries:
+
+```powershell
+Connect-MgGraph -Scopes 'DeviceManagementConfiguration.ReadWrite.All'
+
+# Note: $policy, not $profile - $profile is a PowerShell automatic variable
+$policy = Get-Content -LiteralPath '.\Intune\CProf-Win-D-SetCat-FirewallDomainProfile-[ToEdit].json' -Raw |
+    ConvertFrom-Json
+
+'@odata.context', 'id', 'createdDateTime', 'lastModifiedDateTime',
+'settingCount', 'creationSource', 'priorityMetaData' |
+    ForEach-Object { $policy.PSObject.Properties.Remove($_) }
+
+# Edit these two before importing
+$policy.settings[0].settingInstance.simpleSettingCollectionValue[0].value = 'https://intranet.contoso.com/'
+$policy.settings[1].settingInstance.simpleSettingValue.value = 'Contoso Corporate'
+
+Invoke-MgGraphRequest -Method POST `
+    -Uri 'https://graph.microsoft.com/beta/deviceManagement/configurationPolicies' `
+    -Body ($policy | ConvertTo-Json -Depth 20)
+```
+
+Assign it to the devices, not the users - these are device-scope settings. Verify with `Get-NetConnectionProfile`:
+`NetworkCategory` should read `DomainAuthenticated` once the device is on the internal network.
+
 ## Deployment
 
 Deploy as a **scheduled task running in the user context**, triggered at logon and on network connect.
@@ -134,7 +191,8 @@ What the definition does, and why:
 - **Logon trigger** - covers the normal case.
 - **Event trigger on Firewall event `2010` with `NewProfile = 1`, delayed `PT1M`** - fires when the
   connection is classified into the **Domain** profile, i.e. the moment the device actually gains line of
-  sight to the corporate network. This is what makes VPN and docking-station scenarios work.
+  sight to the corporate network. This is what makes VPN and docking-station scenarios work, and it only
+  ever fires if the [network classification](#network-classification) profile is in place.
 - **`MultipleInstancesPolicy = IgnoreNew`** so overlapping triggers can't stack up.
 - **`ExecutionTimeLimit = PT1H`** as a backstop, and `Hidden = true` so no console window flashes
   (the action runs `conhost.exe --headless` around `powershell.exe`).
@@ -178,7 +236,9 @@ returned verbatim.
 Common causes:
 
 - **Exits immediately, "not reachable"** - no line of sight to a DC, or the connection is classified as a
-  Public network rather than Domain.
+  Public network rather than Domain. Check `Get-NetConnectionProfile`; if `NetworkCategory` is not
+  `DomainAuthenticated`, the problem is the [network classification](#network-classification) profile, not
+  the script.
 - **"No registry-cached UPN matched the current user"** - the cache is stale or belongs to another
   account; the run falls back to `whoami /upn`.
 - **AD search found 0 objects** - the resolved UPN has no matching on-prem user (cloud-only account).

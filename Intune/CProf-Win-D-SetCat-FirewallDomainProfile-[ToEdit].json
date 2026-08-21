@@ -1,0 +1,52 @@
+﻿{
+  "@odata.context": "https://graph.microsoft.com/beta/$metadata#deviceManagement/configurationPolicies/$entity",
+  "createdDateTime": "2025-09-19T10:59:02.8801992Z",
+  "creationSource": null,
+  "description": "",
+  "lastModifiedDateTime": "2025-09-19T11:00:03.8897045Z",
+  "name": "CProf-Win-D-SetCat-FirewallDomainProfile-[ToEdit]",
+  "platforms": "windows10",
+  "priorityMetaData": null,
+  "roleScopeTagIds": ["0"],
+  "settingCount": 2,
+  "technologies": "mdm",
+  "id": "73a74fce-514c-43ab-9faa-2b4a18f06456",
+  "templateReference": {
+    "templateId": "",
+    "templateFamily": "none",
+    "templateDisplayName": null,
+    "templateDisplayVersion": null
+  },
+  "settings": [
+    {
+      "id": "0",
+      "settingInstance": {
+        "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingCollectionInstance",
+        "settingDefinitionId": "device_vendor_msft_policy_config_networklistmanager_allowedtlsauthenticationendpoints",
+        "settingInstanceTemplateReference": null,
+        "auditRuleInformation": null,
+        "simpleSettingCollectionValue": [
+          {
+            "@odata.type": "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+            "settingValueTemplateReference": null,
+            "value": "https://internalwebsite/"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1",
+      "settingInstance": {
+        "@odata.type": "#microsoft.graph.deviceManagementConfigurationSimpleSettingInstance",
+        "settingDefinitionId": "device_vendor_msft_policy_config_networklistmanager_configuredtlsauthenticationnetworkname",
+        "settingInstanceTemplateReference": null,
+        "auditRuleInformation": null,
+        "simpleSettingValue": {
+          "@odata.type": "#microsoft.graph.deviceManagementConfigurationStringSettingValue",
+          "settingValueTemplateReference": null,
+          "value": "Dummy"
+        }
+      }
+    }
+  ]
+}
